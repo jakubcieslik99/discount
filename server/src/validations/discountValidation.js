@@ -1,6 +1,6 @@
 import Joi from 'joi'
 
-const createValidation = Joi.object({
+const createDiscountValidation = Joi.object({
   title: Joi.string().required().max(60),
   price: Joi.number().required().integer().min(0).max(999999999),
   prevprice: Joi.number().integer().min(0).max(999999999),
@@ -28,7 +28,7 @@ const createValidation = Joi.object({
   ),
 })
 
-const updateValidation = Joi.object({
+const updateDiscountValidation = Joi.object({
   title: Joi.string().required().max(60),
   price: Joi.number().required().integer().min(0).max(999999999),
   prevprice: Joi.number().integer().min(0).max(999999999),
@@ -56,11 +56,11 @@ const updateValidation = Joi.object({
   ),
 })
 
-const commentValidation = Joi.object({
+const commentDiscountValidation = Joi.object({
   message: Joi.string().required().max(300),
 })
 
-const listValidation = Joi.object({
+const categoriesValidation = Joi.object({
   category: Joi.string().valid(
     'artykuly_spozywcze',
     'dom_i_ogrod',
@@ -75,4 +75,4 @@ const listValidation = Joi.object({
   ),
 })
 
-export { createValidation, updateValidation, commentValidation, listValidation }
+export { createDiscountValidation, updateDiscountValidation, commentDiscountValidation, categoriesValidation }
