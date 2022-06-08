@@ -76,8 +76,7 @@ const adminListUsers = async (req, res) => {
   else if (req.query.sortOrder && req.query.sortOrder === 'ztoa') sortOrder = { nick: -1 }
   else sortOrder = { nick: 1 }
 
-  let count = 0
-  count = await User.find(query).countDocuments().exec()
+  const count = await User.find(query).countDocuments().exec()
   const listedUsers = await User.find(query, 'email nick isAdmin createdAt')
     .sort(sortOrder)
     .limit(limit * 1)

@@ -144,13 +144,13 @@ const deleteUser = async (req, res) => {
   if (deletedUserDiscounts.length > 0) {
     for (let i = 0; i < deletedUserDiscounts.length; i++) {
       //fs.rmdirSync(`${__dirname}/../../uploads/${deletedUserDiscounts[i]._id}`, {recursive: true})
+      //fs.unlinkSync(`${__dirname}/../../uploads/${deletedUserDiscounts[i]._id}`)
       await del(path.join(__dirname, `/../../uploads/${deletedUserDiscounts[i]._id}`))
 
       await Discount.findByIdAndRemove(deletedUserDiscounts[i]._id).exec()
     }
   }
 
-  //await req.checkedUser.remove()
   //const deletedUser = await User.findById(req.body.id).exec()
   //await deletedUser.remove()
   await authenticatedUser.remove()

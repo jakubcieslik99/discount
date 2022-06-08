@@ -13,30 +13,141 @@ import {
   categoriesValidation,
 } from '../validations/discountValidation'
 
-//GET - /discounts/registerUser
-const listDiscounts = async (req, res) => {}
-//GET - /discounts/registerUser
-const listDiscountDetails = async (req, res) => {}
+//GET - /discounts/listDiscounts
+const listDiscounts = async (req, res) => {
+  const page = req.query.page ? req.query.page : 1
+  const limit = req.query.limit ? req.query.limit : 15
 
-//POST - /discounts/registerUser
+  let query = {}
+  if (req.query.category) {
+    const category = await categoriesValidation.validateAsync({ category: req.query.category })
+    query = { ...query, ...category }
+  }
+  if (req.query.searchKeyword) {
+    query = { ...query, ...{ title: { $regex: req.query.searchKeyword, $options: 'i' } } }
+  }
+
+  let sortOrder = {}
+  if (req.query.sortOrder && req.query.sortOrder === 'oldest') sortOrder = { createdAt: 1 }
+  else if (req.query.sortOrder && req.query.sortOrder === 'expensive') sortOrder = { price: -1 }
+  else if (req.query.sortOrder && req.query.sortOrder === 'cheap') sortOrder = { price: 1 }
+  else sortOrder = { createdAt: -1 }
+
+  const count = await Discount.find(query).countDocuments().exec()
+  const listedDiscounts = await Discount.find(query)
+    .populate('addedBy', 'nick')
+    .sort(sortOrder)
+    .limit(limit * 1)
+    .skip((page - 1) * limit)
+    .exec()
+
+  return res.status(200).send({ count, discounts: listedDiscounts })
+}
+//GET - /discounts/listDiscountDetails/:id
+const listDiscountDetails = async (req, res) => {
+  const listedDiscount = await Discount.findById(req.params.id, '-ratings').populate('addedBy', 'nick').exec()
+  if (!listedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
+
+  return res.status(200).send({ discount: listedDiscount })
+}
+
+//POST - /discounts/createDiscount
 const createDiscount = async (req, res) => {}
-//PUT - /discounts/registerUser
+//PUT - /discounts/updateDiscount/:id
 const updateDiscount = async (req, res) => {}
-//DELETE - /discounts/registerUser
-const deleteDiscount = async (req, res) => {}
+//DELETE - /discounts/deleteDiscount/:id
+const deleteDiscount = async (req, res) => {
+  const { authenticatedUser } = res.locals
 
-//GET - /discounts/registerUser
-const listDiscountRatings = async (req, res) => {}
-//POST - /discounts/registerUser
-const rateDiscount = async (req, res) => {}
-//DELETE - /discounts/registerUser
+  const deletedDiscount = await Discount.findById(req.params.id).exec()
+  if (!deletedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
+
+  if (deletedDiscount.addedBy == authenticatedUser.id || authenticatedUser.isAdmin) {
+    //fs.rmdirSync(`${__dirname}/../../uploads/${deletedDiscount._id}`, {recursive: true})
+    //fs.unlinkSync(`${__dirname}/../../uploads/${deletedDiscount._id}`)
+    await del(path.join(__dirname, `/../../uploads/${deletedDiscount._id}`))
+
+    await deletedDiscount.remove()
+
+    return res.status(200).send({ message: 'Usunięto okazję.' })
+  } else throw createError(403, 'Brak wystarczających uprawnień.')
+}
+
+//GET - /discounts/listDiscountRatings/:id
+const listDiscountRatings = async (req, res) => {
+  const listedDiscount = await Discount.findById(req.params.id, 'ratings').exec()
+  if (!listedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
+
+  return res.status(200).send({ ratings: listedDiscount.ratings })
+}
+//POST - /discounts/rateDiscount/:id
+const rateDiscount = async (req, res) => {
+  const { authenticatedUser } = res.locals
+
+  if (req.body.rating !== true && req.body.rating !== false) throw createError(422, 'Przesłano błędne dane.')
+
+  const ratedDiscount = await Discount.findById(req.params.id, 'addedBy ratings').exec()
+  if (!ratedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
+
+  if (ratedDiscount.addedBy == authenticatedUser.id) throw createError(409, 'Nie możesz ocenić swojej okazji.')
+
+  const ratingIndex = ratedDiscount.ratings.findIndex(rating => rating.ratedBy == authenticatedUser.id)
+  if (ratingIndex >= 0) ratedDiscount.ratings[ratingIndex].rating = req.body.rating
+  else {
+    const newRating = {
+      ratedBy: authenticatedUser.id,
+      rating: req.body.rating,
+    }
+    ratedDiscount.ratings.push(newRating)
+  }
+
+  await ratedDiscount.save()
+
+  return res.status(200).send({ message: 'Dodano ocenę.', ratings: ratedDiscount.ratings })
+}
+//DELETE - /discounts/unrateDiscount/:id
 const unrateDiscount = async (req, res) => {}
 
-//GET - /discounts/registerUser
-const listDiscountComments = async (req, res) => {}
-//POST - /discounts/registerUser
-const commentDiscount = async (req, res) => {}
-//DELETE - /discounts/registerUser
+//GET - /discounts/listDiscountComments/:id
+const listDiscountComments = async (req, res) => {
+  const listedDiscount = await Discount.findById(req.params.id, 'comments')
+    .populate({
+      path: 'comments',
+      populate: { path: 'commentedBy', select: 'nick' },
+    })
+    .exec()
+  if (!listedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
+
+  return res.status(200).send({ comments: listedDiscount.comments })
+}
+//POST - /discounts/commentDiscount/:id
+const commentDiscount = async (req, res) => {
+  const { authenticatedUser } = res.locals
+
+  const validationResult = await commentDiscountValidation.validateAsync({ message: req.body.message })
+
+  const commentedDiscount = await Discount.findById(req.params.id, 'comments').exec()
+  if (!commentedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
+
+  const newComment = {
+    commentedBy: authenticatedUser.id,
+    message: validationResult.message,
+    createdAt: new Date(),
+  }
+  commentedDiscount.comments.push(newComment)
+
+  await commentedDiscount.save()
+
+  const newCommentedDiscount = await Discount.findById(commentedDiscount._id, 'comments')
+    .populate({
+      path: 'comments',
+      populate: { path: 'commentedBy', select: 'nick' },
+    })
+    .exec()
+
+  return res.status(201).send({ comments: newCommentedDiscount.comments })
+}
+//DELETE - /discounts/uncommentDiscount/:id/:commentId
 const uncommentDiscount = async (req, res) => {}
 
 export {
@@ -56,80 +167,6 @@ export {
 //-----to delete-----
 const upload = multer()
 const pipeline = promisify(require('stream').pipeline)
-
-//list all discounts
-router.get('/', isPageLimit(15), async (req, res, next) => {
-  try {
-    const page = req.query.page
-    const limit = req.query.limit
-
-    let sortOrder = {}
-    if (req.query.sortOrder && req.query.sortOrder === 'date_oldest') sortOrder = { _id: 1 }
-    else if (req.query.sortOrder && req.query.sortOrder === 'price_highest') sortOrder = { price: -1 }
-    else if (req.query.sortOrder && req.query.sortOrder === 'price_lowest') sortOrder = { price: 1 }
-    else sortOrder = { _id: -1 }
-
-    let category = {}
-    if (req.query.category) category = await listValidation.validateAsync({ category: req.query.category })
-
-    let discounts = {}
-    let count = 0
-    if (req.query.category && req.query.searchKeyword) {
-      count = await Discount.find({
-        category: category.category,
-        title: { $regex: req.query.searchKeyword, $options: 'i' },
-      }).countDocuments()
-      discounts = await Discount.find({
-        category: category.category,
-        title: { $regex: req.query.searchKeyword, $options: 'i' },
-      })
-        .sort(sortOrder)
-        .limit(limit * 1)
-        .skip((page - 1) * limit)
-        .populate('addedBy', 'nick')
-    } else if (req.query.category) {
-      count = await Discount.find({ category: category.category }).countDocuments()
-      discounts = await Discount.find({ category: category.category })
-        .sort(sortOrder)
-        .limit(limit * 1)
-        .skip((page - 1) * limit)
-        .populate('addedBy', 'nick')
-    } else if (req.query.searchKeyword) {
-      count = await Discount.find({ title: { $regex: req.query.searchKeyword, $options: 'i' } }).countDocuments()
-      discounts = await Discount.find({ title: { $regex: req.query.searchKeyword, $options: 'i' } })
-        .sort(sortOrder)
-        .limit(limit * 1)
-        .skip((page - 1) * limit)
-        .populate('addedBy', 'nick')
-    } else {
-      count = await Discount.find({}).countDocuments()
-      discounts = await Discount.find({})
-        .sort(sortOrder)
-        .limit(limit * 1)
-        .skip((page - 1) * limit)
-        .populate('addedBy', 'nick')
-    }
-
-    return res.status(200).send({ count, discounts: discounts })
-  } catch (error) {
-    if (error.isJoi === true) {
-      error.status = 422
-      error.message = 'Przesłano błędne dane.'
-    }
-    return next(error)
-  }
-})
-//list discount details
-router.get('/:id', isValidId('id'), async (req, res, next) => {
-  try {
-    const discount = await Discount.findById(req.params.id, '-ratings').populate('addedBy', 'nick')
-    if (!discount) throw createError(404, 'Podana okazja nie istnieje.')
-
-    return res.status(200).send(discount)
-  } catch (error) {
-    return next(error)
-  }
-})
 
 //create new discount
 router.post('/manage', isAuth, upload.array('files'), async (req, res, next) => {
@@ -265,66 +302,7 @@ router.put('/manage/:id', isValidId('id'), isAuth, upload.array('files'), async 
     return next(error)
   }
 })
-//delete discount (admin can delete every single)
-router.delete('/manage/:id', isValidId('id'), isAuth, async (req, res, next) => {
-  try {
-    const possibleAdmin = req.checkedUser.isAdmin
 
-    const deletedDiscount = await Discount.findById(req.params.id)
-    if (!deletedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
-
-    if (deletedDiscount.addedBy == req.user.id || possibleAdmin) {
-      //fs.rmdirSync(`${__dirname}/../../uploads/${deletedDiscount._id}`, {recursive: true})
-      //fs.unlinkSync(`${__dirname}/../../uploads/${deletedDiscount._id}`)
-      await del(path.join(__dirname, `/../../uploads/${deletedDiscount._id}`))
-
-      await deletedDiscount.remove()
-
-      return res.status(200).send({ message: 'Usunięto okazję.' })
-    } else throw createError(403, 'Brak wystarczających uprawnień.')
-  } catch (error) {
-    return next(error)
-  }
-})
-
-//list discount ratings
-router.get('/rate/:id', isValidId('id'), async (req, res, next) => {
-  try {
-    const discount = await Discount.findById(req.params.id, 'ratings')
-    if (!discount) throw createError(404, 'Podana okazja nie istnieje.')
-
-    return res.status(200).send(discount.ratings)
-  } catch (error) {
-    return next(error)
-  }
-})
-//rate discount
-router.post('/rate/:id', isValidId('id'), isAuth, async (req, res, next) => {
-  try {
-    if (req.body.rating !== true && req.body.rating !== false) throw createError(422, 'Przesłano błędne dane.')
-
-    const ratedDiscount = await Discount.findById(req.params.id, 'addedBy ratings')
-    if (!ratedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
-
-    if (ratedDiscount.addedBy == req.user.id) throw createError(409, 'Nie możesz ocenić swojej okazji.')
-
-    const ratingIndex = ratedDiscount.ratings.findIndex(rating => rating.ratedBy == req.user.id)
-    if (ratingIndex >= 0) ratedDiscount.ratings[ratingIndex].rating = req.body.rating
-    else {
-      const newRating = {
-        ratedBy: req.user.id,
-        rating: req.body.rating,
-      }
-      ratedDiscount.ratings.push(newRating)
-    }
-
-    await ratedDiscount.save()
-
-    return res.status(200).send({ message: 'Dodano ocenę.', ratings: ratedDiscount.ratings })
-  } catch (error) {
-    return next(error)
-  }
-})
 //unrate discount
 router.delete('/rate/:id', isValidId('id'), isAuth, async (req, res, next) => {
   try {
@@ -346,57 +324,6 @@ router.delete('/rate/:id', isValidId('id'), isAuth, async (req, res, next) => {
   }
 })
 
-//list discount comments
-router.get('/comment/:id', isValidId('id'), async (req, res, next) => {
-  try {
-    const discount = await Discount.findById(req.params.id, 'comments').populate({
-      path: 'comments',
-      populate: {
-        path: 'commentedBy',
-        select: 'nick',
-      },
-    })
-    if (!discount) throw createError(404, 'Podana okazja nie istnieje.')
-
-    return res.status(200).send(discount.comments)
-  } catch (error) {
-    return next(error)
-  }
-})
-//create comment
-router.post('/comment/:id', isValidId('id'), isAuth, async (req, res, next) => {
-  try {
-    const validationResult = await commentValidation.validateAsync({ message: req.body.message })
-
-    const commentedDiscount = await Discount.findById(req.params.id, 'comments')
-    if (!commentedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
-
-    const newComment = {
-      commentedBy: req.user.id,
-      message: validationResult.message,
-      createdAt: new Date(),
-    }
-    commentedDiscount.comments.push(newComment)
-
-    await commentedDiscount.save()
-
-    const newCommentedDiscount = await Discount.findById(commentedDiscount._id, 'comments').populate({
-      path: 'comments',
-      populate: {
-        path: 'commentedBy',
-        select: 'nick',
-      },
-    })
-
-    return res.status(201).send(newCommentedDiscount.comments)
-  } catch (error) {
-    if (error.isJoi === true) {
-      error.status = 422
-      error.message = 'Przesłano błędne dane.'
-    }
-    return next(error)
-  }
-})
 //delete comment (admin can delete every single)
 router.delete('/comment/:id/:commentId', isValidId('id', 'commentId'), isAuth, async (req, res, next) => {
   try {
