@@ -106,7 +106,24 @@ const rateDiscount = async (req, res) => {
   return res.status(200).send({ message: 'Dodano ocenę.', ratings: ratedDiscount.ratings })
 }
 //DELETE - /discounts/unrateDiscount/:id
-const unrateDiscount = async (req, res) => {}
+const unrateDiscount = async (req, res) => {
+  const { authenticatedUser } = res.locals
+
+  const unratedDiscount = await Discount.findById(req.params.id, 'ratings').exec()
+  if (!unratedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
+
+  const unratingIndex = unratedDiscount.ratings.findIndex(rating => rating.ratedBy == authenticatedUser.id)
+  if (unratingIndex < 0) throw createError(404, 'Podana ocena nie istnieje.')
+
+  //let newRatings = unratedDiscount.ratings
+  //newRatings.splice(unratingIndex, 1)
+  //unratedDiscount.ratings = newRatings
+  unratedDiscount.ratings = unratedDiscount.ratings.splice(unratingIndex, 1)
+
+  await unratedDiscount.save()
+
+  return res.status(200).send({ message: 'Usunięto ocenę.', ratings: unratedDiscount.ratings })
+}
 
 //GET - /discounts/listDiscountComments/:id
 const listDiscountComments = async (req, res) => {
@@ -148,7 +165,34 @@ const commentDiscount = async (req, res) => {
   return res.status(201).send({ comments: newCommentedDiscount.comments })
 }
 //DELETE - /discounts/uncommentDiscount/:id/:commentId
-const uncommentDiscount = async (req, res) => {}
+const uncommentDiscount = async (req, res) => {
+  const { authenticatedUser } = res.locals
+
+  const commentedDiscount = await Discount.findById(req.params.id, 'comments').exec()
+  if (!commentedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
+
+  const deletedCommentIndex = commentedDiscount.comments.findIndex(comment => comment._id == req.params.commentId)
+  if (deletedCommentIndex < 0) throw createError(404, 'Podany komentarz nie istnieje.')
+
+  if (commentedDiscount.comments[deletedCommentIndex].commentedBy == authenticatedUser.id || authenticatedUser.isAdmin) {
+    if (commentedDiscount.comments[deletedCommentIndex].deleted === true)
+      throw createError(409, 'Podany komentarz został już usunięty.')
+
+    commentedDiscount.comments[deletedCommentIndex].message = 'Komentarz został usunięty.'
+    commentedDiscount.comments[deletedCommentIndex].deleted = true
+
+    await commentedDiscount.save()
+
+    const newCommentedDiscount = await Discount.findById(commentedDiscount._id, 'comments')
+      .populate({
+        path: 'comments',
+        populate: { path: 'commentedBy', select: 'nick' },
+      })
+      .exec()
+
+    return res.status(200).send({ comments: newCommentedDiscount.comments })
+  } else throw createError(403, 'Brak wystarczających uprawnień.')
+}
 
 export {
   listDiscounts,
@@ -299,62 +343,6 @@ router.put('/manage/:id', isValidId('id'), isAuth, upload.array('files'), async 
       error.status = 422
       error.message = 'Przesłano błędne dane.'
     }
-    return next(error)
-  }
-})
-
-//unrate discount
-router.delete('/rate/:id', isValidId('id'), isAuth, async (req, res, next) => {
-  try {
-    const unratedDiscount = await Discount.findById(req.params.id, 'ratings')
-    if (!unratedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
-
-    const unratingIndex = unratedDiscount.ratings.findIndex(rating => rating.ratedBy == req.user.id)
-    if (unratingIndex < 0) throw createError(404, 'Podana ocena nie istnieje.')
-
-    let newRatings = unratedDiscount.ratings
-    newRatings.splice(unratingIndex, 1)
-    unratedDiscount.ratings = newRatings
-
-    await unratedDiscount.save()
-
-    return res.status(200).send({ message: 'Usunięto ocenę.', ratings: unratedDiscount.ratings })
-  } catch (error) {
-    return next(error)
-  }
-})
-
-//delete comment (admin can delete every single)
-router.delete('/comment/:id/:commentId', isValidId('id', 'commentId'), isAuth, async (req, res, next) => {
-  try {
-    const possibleAdmin = req.checkedUser.isAdmin
-
-    const commentedDiscount = await Discount.findById(req.params.id, 'comments')
-    if (!commentedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
-
-    const deletedCommentIndex = commentedDiscount.comments.findIndex(comment => comment._id == req.params.commentId)
-    if (deletedCommentIndex < 0) throw createError(404, 'Podany komentarz nie istnieje.')
-
-    if (commentedDiscount.comments[deletedCommentIndex].commentedBy == req.user.id || possibleAdmin) {
-      if (commentedDiscount.comments[deletedCommentIndex].deleted === true)
-        throw createError(409, 'Podany komentarz został już usunięty.')
-
-      commentedDiscount.comments[deletedCommentIndex].message = 'Komentarz został usunięty.'
-      commentedDiscount.comments[deletedCommentIndex].deleted = true
-
-      await commentedDiscount.save()
-
-      const newCommentedDiscount = await Discount.findById(commentedDiscount._id, 'comments').populate({
-        path: 'comments',
-        populate: {
-          path: 'commentedBy',
-          select: 'nick',
-        },
-      })
-
-      return res.status(200).send(newCommentedDiscount.comments)
-    } else throw createError(403, 'Brak wystarczających uprawnień.')
-  } catch (error) {
     return next(error)
   }
 })
