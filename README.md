@@ -1,6 +1,6 @@
-# <img src="https://i.ibb.co/bgS9Qmt/discount-1.png" width="400">
+# <img src="https://i.ibb.co/bgS9Qmt/discount-1.png" width="375">
 
-## Discount 🎟️
+## Discount 🎟️ _(currently being refactored)_
 
 🔃 Simple sales & coupons database & manager app with REST API server, based on the MERN stack. Project contains Express.js
 app as a backend (server) and React app as a frontend (client).
@@ -128,4 +128,4 @@ If you have any feedback, please reach out to me at ✉️ contact@jakubcieslik.
 
 ## Authors
 
-- [@jakubcieslik99](https://www.github.com/jakubcieslik99) (Frontend dev, UI/UX, backend dev, DB management, deployment)
+- [@jakubcieslik99](https://www.github.com/jakubcieslik99)
