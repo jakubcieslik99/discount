@@ -1,5 +1,5 @@
 import createError from 'http-errors'
-import multer from 'multer' //refactor
+//import multer from 'multer' //refactor
 import path from 'path' //refactor
 import del from 'del'
 import fs from 'fs' //refactor
@@ -12,6 +12,9 @@ import {
   commentDiscountValidation,
   categoriesValidation,
 } from '../validations/discountValidation'
+
+//const upload = multer()
+const pipeline = promisify(require('stream').pipeline)
 
 //GET - /discounts/listDiscounts
 const listDiscounts = async (req, res) => {
@@ -52,9 +55,126 @@ const listDiscountDetails = async (req, res) => {
 }
 
 //POST - /discounts/createDiscount
-const createDiscount = async (req, res) => {}
+const createDiscount = async (req, res) => {
+  const { authenticatedUser } = res.locals
+
+  const validationResult = await createDiscountValidation.validateAsync({
+    title: req.body.title,
+    price: req.body.price,
+    prevprice: req.body.prevprice,
+    store: req.body.store,
+    freeShipping: req.body.freeShipping,
+    description: req.body.description,
+    discountCode: req.body.discountCode,
+    link: req.body.link,
+    category: req.body.category,
+  })
+
+  const newDiscount = new Discount({
+    addedBy: authenticatedUser.id,
+    title: validationResult.title,
+    price: validationResult.price,
+    prevprice: validationResult.prevprice,
+    store: validationResult.store,
+    freeShipping: validationResult.freeShipping,
+    description: validationResult.description,
+    discountCode: validationResult.discountCode,
+    link: validationResult.link,
+    category: validationResult.category,
+    images: [],
+  })
+
+  fs.mkdirSync(path.join(__dirname, `/../../uploads/${newDiscount._id}`), { recursive: false })
+  if (req.files.length > 1) throw createError(406, 'Przesłano zbyt dużo plików.')
+  else {
+    for (let i = 0; i < req.files.length; i++) {
+      const ext = path.extname(req.files[i].originalname)
+      if (ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg')
+        throw createError(406, 'Format przesłanego pliku jest niepoprawny.')
+      if (req.files[i].size > 5 * 1024 * 1024) throw createError(406, 'Rozmiar przesłanego pliku jest za duży.')
+
+      //const filename = Date.now() + '_' + req.files[i].originalName
+      const filename = `${req.files[i].fieldname}-${Date.now()}_${i}${ext}`
+
+      await pipeline(
+        Readable.from(req.files[i].buffer),
+        fs.createWriteStream(path.join(__dirname, `/../../uploads/${newDiscount._id}/${filename}`))
+      )
+      newDiscount.images.push(filename)
+    }
+  }
+
+  await newDiscount.save()
+
+  return res.status(201).send({ message: 'Dodano nową okazję.', discount: newDiscount })
+}
 //PUT - /discounts/updateDiscount/:id
-const updateDiscount = async (req, res) => {}
+const updateDiscount = async (req, res) => {
+  const { authenticatedUser } = res.locals
+
+  const validationResult = await updateDiscountValidation.validateAsync({
+    title: req.body.title,
+    price: req.body.price,
+    prevprice: req.body.prevprice,
+    store: req.body.store,
+    freeShipping: req.body.freeShipping,
+    description: req.body.description,
+    discountCode: req.body.discountCode,
+    link: req.body.link,
+    category: req.body.category,
+  })
+
+  const updatedDiscount = await Discount.findById(req.params.id)
+  if (!updatedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
+
+  if (updatedDiscount.addedBy == authenticatedUser.id || authenticatedUser.isAdmin) {
+    let images = [],
+      imagesToKeep = [],
+      imagesToUpload = []
+    if (Array.isArray(req.body.images)) images = req.body.images
+    else if (!Array.isArray(req.body.images) && req.body.images !== undefined) images.push(req.body.images)
+
+    if (images.length > 1) throw createError(422, 'Przesłano błędne dane.')
+    else if (req.files.length > 1 - images.length) throw createError(406, 'Przesłano zbyt dużo plików.')
+    else {
+      for (let i = 0; i < updatedDiscount.images.length; i++) {
+        if (images.includes(updatedDiscount.images[i])) imagesToKeep.push(updatedDiscount.images[i])
+        else fs.unlinkSync(path.join(__dirname, `/../../uploads/${updatedDiscount._id}/${updatedDiscount.images[i]}`))
+      }
+
+      for (let i = 0; i < req.files.length; i++) {
+        const ext = path.extname(req.files[i].originalname)
+        if (ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg')
+          throw createError(406, 'Format przesłanego pliku jest niepoprawny.')
+        if (req.files[i].size > 5 * 1024 * 1024) throw createError(406, 'Rozmiar przesłanego pliku jest za duży.')
+
+        //const filename = Date.now() + '_' + req.files[i].originalName
+        const filename = `${req.files[i].fieldname}-${Date.now()}_${i}${ext}`
+
+        await pipeline(
+          Readable.from(req.files[i].buffer),
+          fs.createWriteStream(path.join(__dirname, `/../../uploads/${updatedDiscount._id}/${filename}`))
+        )
+        imagesToUpload.push(filename)
+      }
+    }
+
+    updatedDiscount.title = validationResult.title
+    updatedDiscount.price = validationResult.price
+    updatedDiscount.prevprice = validationResult.prevprice
+    updatedDiscount.store = validationResult.store
+    updatedDiscount.freeShipping = validationResult.freeShipping
+    updatedDiscount.description = validationResult.description
+    updatedDiscount.discountCode = validationResult.discountCode
+    updatedDiscount.link = validationResult.link
+    updatedDiscount.category = validationResult.category
+    updatedDiscount.images = imagesToKeep.concat(imagesToUpload)
+
+    await updatedDiscount.save()
+  } else throw createError(403, 'Brak wystarczających uprawnień.')
+
+  return res.status(200).send({ message: 'Zaktualizowano okazję.', discount: updatedDiscount })
+}
 //DELETE - /discounts/deleteDiscount/:id
 const deleteDiscount = async (req, res) => {
   const { authenticatedUser } = res.locals
@@ -141,7 +261,7 @@ const listDiscountComments = async (req, res) => {
 const commentDiscount = async (req, res) => {
   const { authenticatedUser } = res.locals
 
-  const validationResult = await commentDiscountValidation.validateAsync({ message: req.body.message })
+  const validationResult = await commentDiscountValidation.validateAsync(req.body)
 
   const commentedDiscount = await Discount.findById(req.params.id, 'comments').exec()
   if (!commentedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
@@ -207,142 +327,3 @@ export {
   commentDiscount,
   uncommentDiscount,
 }
-
-//-----to delete-----
-const upload = multer()
-const pipeline = promisify(require('stream').pipeline)
-
-//create new discount
-router.post('/manage', isAuth, upload.array('files'), async (req, res, next) => {
-  try {
-    const validationResult = await createValidation.validateAsync({
-      title: req.body.title,
-      price: req.body.price,
-      prevprice: req.body.prevprice,
-      store: req.body.store,
-      freeShipping: req.body.freeShipping,
-      description: req.body.description,
-      discountCode: req.body.discountCode,
-      link: req.body.link,
-      category: req.body.category,
-    })
-
-    const newDiscount = new Discount({
-      addedBy: req.user.id,
-      title: validationResult.title,
-      price: validationResult.price,
-      prevprice: validationResult.prevprice,
-      store: validationResult.store,
-      freeShipping: validationResult.freeShipping,
-      description: validationResult.description,
-      discountCode: validationResult.discountCode,
-      link: validationResult.link,
-      category: validationResult.category,
-      images: [],
-    })
-
-    fs.mkdirSync(path.join(__dirname, `/../../uploads/${newDiscount._id}`), { recursive: false })
-    if (req.files.length > 1) throw createError(406, 'Przesłano zbyt dużo plików.')
-    else {
-      for (let i = 0; i < req.files.length; i++) {
-        const ext = path.extname(req.files[i].originalname)
-        if (ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg')
-          throw createError(406, 'Format przesłanego pliku jest niepoprawny.')
-        if (req.files[i].size > 5 * 1024 * 1024) throw createError(406, 'Rozmiar przesłanego pliku jest za duży.')
-
-        //const filename = Date.now() + '_' + req.files[i].originalName
-        const filename = `${req.files[i].fieldname}-${Date.now()}_${i}${ext}`
-
-        await pipeline(
-          Readable.from(req.files[i].buffer),
-          fs.createWriteStream(path.join(__dirname, `/../../uploads/${newDiscount._id}/${filename}`))
-        )
-        newDiscount.images.push(filename)
-      }
-    }
-
-    await newDiscount.save()
-
-    return res.status(201).send({ message: 'Dodano nową okazję.', discount: newDiscount })
-  } catch (error) {
-    if (error.isJoi === true) {
-      error.status = 422
-      error.message = 'Przesłano błędne dane.'
-    }
-    return next(error)
-  }
-})
-//update discount (admin can update every single)
-router.put('/manage/:id', isValidId('id'), isAuth, upload.array('files'), async (req, res, next) => {
-  try {
-    const possibleAdmin = req.checkedUser.isAdmin
-
-    const validationResult = await updateValidation.validateAsync({
-      title: req.body.title,
-      price: req.body.price,
-      prevprice: req.body.prevprice,
-      store: req.body.store,
-      freeShipping: req.body.freeShipping,
-      description: req.body.description,
-      discountCode: req.body.discountCode,
-      link: req.body.link,
-      category: req.body.category,
-    })
-
-    const updatedDiscount = await Discount.findById(req.params.id)
-    if (!updatedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
-
-    if (updatedDiscount.addedBy == req.user.id || possibleAdmin) {
-      let images = [],
-        imagesToKeep = [],
-        imagesToUpload = []
-      if (Array.isArray(req.body.images)) images = req.body.images
-      else if (!Array.isArray(req.body.images) && req.body.images !== undefined) images.push(req.body.images)
-
-      if (images.length > 1) throw createError(422, 'Przesłano błędne dane.')
-      else if (req.files.length > 1 - images.length) throw createError(406, 'Przesłano zbyt dużo plików.')
-      else {
-        for (let i = 0; i < updatedDiscount.images.length; i++) {
-          if (images.includes(updatedDiscount.images[i])) imagesToKeep.push(updatedDiscount.images[i])
-          else fs.unlinkSync(path.join(__dirname, `/../../uploads/${updatedDiscount._id}/${updatedDiscount.images[i]}`))
-        }
-
-        for (let i = 0; i < req.files.length; i++) {
-          const ext = path.extname(req.files[i].originalname)
-          if (ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg')
-            throw createError(406, 'Format przesłanego pliku jest niepoprawny.')
-          if (req.files[i].size > 5 * 1024 * 1024) throw createError(406, 'Rozmiar przesłanego pliku jest za duży.')
-
-          //const filename = Date.now() + '_' + req.files[i].originalName
-          const filename = `${req.files[i].fieldname}-${Date.now()}_${i}${ext}`
-
-          await pipeline(
-            Readable.from(req.files[i].buffer),
-            fs.createWriteStream(path.join(__dirname, `/../../uploads/${updatedDiscount._id}/${filename}`))
-          )
-          imagesToUpload.push(filename)
-        }
-      }
-
-      updatedDiscount.title = validationResult.title
-      updatedDiscount.price = validationResult.price
-      updatedDiscount.prevprice = validationResult.prevprice
-      updatedDiscount.store = validationResult.store
-      updatedDiscount.freeShipping = validationResult.freeShipping
-      updatedDiscount.description = validationResult.description
-      updatedDiscount.discountCode = validationResult.discountCode
-      updatedDiscount.link = validationResult.link
-      updatedDiscount.category = validationResult.category
-      updatedDiscount.images = imagesToKeep.concat(imagesToUpload)
-      await updatedDiscount.save()
-    } else throw createError(403, 'Brak wystarczających uprawnień.')
-
-    return res.status(200).send({ message: 'Zaktualizowano okazję.', discount: updatedDiscount })
-  } catch (error) {
-    if (error.isJoi === true) {
-      error.status = 422
-      error.message = 'Przesłano błędne dane.'
-    }
-    return next(error)
-  }
-})

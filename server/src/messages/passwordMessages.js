@@ -2,9 +2,9 @@ import { config } from '../config/utilities'
 
 const sendUserPasswordResetMessage = (to, nick, token) => {
   return {
-    from: `Discount <${config.NOREPLY_ADDRESS}>`,
+    from: `Discount 🎟️ <${config.NOREPLY_ADDRESS}>`,
     to,
-    subject: `Zresetuj hasło w serwisie Discount`,
+    subject: `🛡️ Zresetuj hasło w serwisie Discount 🎟️`,
     text: `
       Witaj ${nick}!
       Na Twoim koncie została wygenerowana prośba o zresetowanie hasła. Jeśli to nie Ty ją wygenerowałeś, zignoruj tą wiadomość.

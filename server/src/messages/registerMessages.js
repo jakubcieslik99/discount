@@ -2,9 +2,9 @@ import { config } from '../config/utilities'
 
 const registerUserMessage = (to, nick, token) => {
   return {
-    from: `Discount <${config.NOREPLY_ADDRESS}>`,
+    from: `Discount 🎟️ <${config.NOREPLY_ADDRESS}>`,
     to,
-    subject: `Potwierdź rejestrację w serwisie Discount`,
+    subject: `🛡️ Potwierdź rejestrację w serwisie Discount 🎟️`,
     text: `
       Witaj ${nick}! 
       Dziękujemy za rejestrację w Discount. 
@@ -22,9 +22,9 @@ const registerUserMessage = (to, nick, token) => {
 
 const resendUserAccountConfirmationMessage = (to, nick, token) => {
   return {
-    from: `Discount <${config.NOREPLY_ADDRESS}>`,
+    from: `Discount 🎟️ <${config.NOREPLY_ADDRESS}>`,
     to,
-    subject: `Potwierdź adres email w serwisie Discount`,
+    subject: `🛡️ Potwierdź adres email w serwisie Discount 🎟️`,
     text: `
       Witaj ${nick}! 
       Dziękujemy za rejestrację w Discount. 

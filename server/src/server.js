@@ -11,7 +11,7 @@ import corsOptions from './config/corsOptions'
 import { rateLimiter, speedLimiter } from './config/limitOptions'
 import { isError } from './middlewares/errorMiddleware'
 import userRoute from './routes/userRoute'
-//import discountRoute from './routes/discountRoute'
+import discountRoute from './routes/discountRoute'
 import adminUserRoute from './routes/adminUserRoute.js'
 
 const app = express()
@@ -31,7 +31,7 @@ app.use('/static/', express.static('uploads'))
 //routes
 app.use('/users', userRoute)
 app.use('/adminUsers', adminUserRoute)
-//app.use('/discounts', discountRoute)
+app.use('/discounts', discountRoute)
 //404 error
 app.all('*', (_req, _res, next) => next(createError(404, 'Podany zasób nie istnieje.')))
 //errors handling middleware

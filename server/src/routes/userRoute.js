@@ -7,6 +7,7 @@ import {
   loginUser,
   updateUser,
   deleteUser,
+  logoutUser,
   resendUserAccountConfirmation,
   confirmUserAccount,
   sendUserPasswordReset,
@@ -21,6 +22,8 @@ router.post('/loginUser', errorHandler(loginUser))
 
 router.put('/updateUser', isAuth, errorHandler(updateUser))
 router.delete('/deleteUser', isAuth, errorHandler(deleteUser))
+
+router.get('/logoutUser', errorHandler(logoutUser))
 
 router.post('/resendUserAccountConfirmation', errorHandler(resendUserAccountConfirmation))
 router.post('/confirmUserAccount', errorHandler(confirmUserAccount))

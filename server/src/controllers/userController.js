@@ -5,6 +5,7 @@ import del from 'del'
 //import fs from 'fs'
 import User from '../models/userModel'
 import Discount from '../models/discountModel'
+import { config } from '../config/utilities'
 import {
   registerUserValidation,
   loginUserValidation,
@@ -14,7 +15,7 @@ import {
   sendUserPasswordResetValidation,
   resetUserPasswordValidation,
 } from '../validations/userValidation'
-import { getToken } from '../functions/generateToken'
+import getToken from '../functions/generateToken'
 import sendEmail from '../functions/sendEmail'
 import { registerUserMessage, resendUserAccountConfirmationMessage } from '../messages/registerMessages'
 import { sendUserPasswordResetMessage } from '../messages/passwordMessages'
@@ -49,6 +50,8 @@ const registerUser = async (req, res) => {
 }
 //POST - /users/loginUser
 const loginUser = async (req, res) => {
+  if (req.cookies?.token) throw createError(409, 'Użytkownik jest zalogowany.')
+
   const validationResult = await loginUserValidation.validateAsync(req.body)
 
   const loggedUser = await User.findOne({ email: validationResult.email }).exec()
@@ -61,16 +64,24 @@ const loginUser = async (req, res) => {
 
   const token = await getToken(loggedUser._id, loggedUser.email, loggedUser.nick, loggedUser.isAdmin)
 
-  res.status(200).send({
-    message: 'Zalogowano pomyślnie. Nastąpi przekierowanie do profilu.',
-    userInfo: {
-      id: loggedUser._id,
-      email: loggedUser.email,
-      nick: loggedUser.nick,
-      isAdmin: loggedUser.isAdmin,
-    },
-    token: token,
-  })
+  res
+    .cookie('token', token, {
+      httpOnly: true,
+      sameSite: 'none',
+      secure: config.ENV !== 'test' ? true : false,
+      maxAge: 7 * 24 * 3600 * 1000,
+    })
+    .status(200)
+    .send({
+      message: 'Zalogowano pomyślnie. Nastąpi przekierowanie do profilu.',
+      userInfo: {
+        id: loggedUser._id,
+        email: loggedUser.email,
+        nick: loggedUser.nick,
+        isAdmin: loggedUser.isAdmin,
+      },
+      token: token,
+    })
 }
 
 //PUT - /users/updateUser
@@ -86,11 +97,9 @@ const updateUser = async (req, res) => {
   })
 
   const conflictUserEmail = await User.findOne({ email: validationResult.email }).exec()
-  if (conflictUserEmail && conflictUserEmail._id != req.body.id)
-    throw createError(409, 'Istnieje już użytkownik o podanym adresie email.')
+  if (conflictUserEmail?._id != req.body.id) throw createError(409, 'Istnieje już użytkownik o podanym adresie email.')
   const conflictUserNick = await User.findOne({ nick: validationResult.nick }).exec()
-  if (conflictUserNick && conflictUserNick._id != req.body.id)
-    throw createError(409, 'Istnieje już użytkownik o podanym nicku.')
+  if (conflictUserNick?._id != req.body.id) throw createError(409, 'Istnieje już użytkownik o podanym nicku.')
 
   const updateUser = await User.findById(req.body.id).exec()
   if (!updateUser) throw createError(404, 'Podany użytkownik nie istnieje.')
@@ -156,6 +165,15 @@ const deleteUser = async (req, res) => {
   await authenticatedUser.remove()
 
   return res.status(200).send({ message: 'Usunięto konto z serwisu.' })
+}
+
+//GET - /users/logoutUser
+const logoutUser = async (req, res) => {
+  if (!req.cookies?.token) return res.sendStatus(204)
+
+  return res
+    .clearCookie('token', { httpOnly: true, sameSite: 'none', secure: config.ENV !== 'test' ? true : false })
+    .sendStatus(204)
 }
 
 //POST - /users/resendUserAccountConfirmation
@@ -247,6 +265,7 @@ export {
   loginUser,
   updateUser,
   deleteUser,
+  logoutUser,
   resendUserAccountConfirmation,
   confirmUserAccount,
   sendUserPasswordReset,
