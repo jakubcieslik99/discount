@@ -1,8 +1,6 @@
 import createError from 'http-errors'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
-import del from 'del'
-//import fs from 'fs'
 import User from '../models/userModel'
 import Discount from '../models/discountModel'
 import { config } from '../config/utilities'
@@ -154,7 +152,7 @@ const deleteUser = async (req, res) => {
     for (let i = 0; i < deletedUserDiscounts.length; i++) {
       //fs.rmdirSync(`${__dirname}/../../uploads/${deletedUserDiscounts[i]._id}`, {recursive: true})
       //fs.unlinkSync(`${__dirname}/../../uploads/${deletedUserDiscounts[i]._id}`)
-      await del(path.join(__dirname, `/../../uploads/${deletedUserDiscounts[i]._id}`))
+      //await del(path.join(__dirname, `/../../uploads/${deletedUserDiscounts[i]._id}`))
 
       await Discount.findByIdAndRemove(deletedUserDiscounts[i]._id).exec()
     }

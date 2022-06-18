@@ -1,10 +1,5 @@
 import createError from 'http-errors'
-//import multer from 'multer' //refactor
-import path from 'path' //refactor
-import del from 'del'
-import fs from 'fs' //refactor
-import { Readable } from 'stream' //refactor
-import { promisify } from 'util' //refactor
+import { createDirectory, removeDirectory, saveFiles, filterFiles } from '../functions/manageUploads'
 import Discount from '../models/discountModel'
 import {
   createDiscountValidation,
@@ -13,11 +8,8 @@ import {
   categoriesValidation,
 } from '../validations/discountValidation'
 
-//const upload = multer()
-const pipeline = promisify(require('stream').pipeline)
-
 //GET - /discounts/listDiscounts
-const listDiscounts = async (req, res) => {
+const listDiscounts = async (req, res, next) => {
   const page = req.query.page ? req.query.page : 1
   const limit = req.query.limit ? req.query.limit : 15
 
@@ -56,14 +48,14 @@ const listDiscountDetails = async (req, res) => {
 
 //POST - /discounts/createDiscount
 const createDiscount = async (req, res) => {
-  const { authenticatedUser } = res.locals
+  const { authenticatedUser, uploads } = res.locals
 
   const validationResult = await createDiscountValidation.validateAsync({
     title: req.body.title,
-    price: req.body.price,
-    prevprice: req.body.prevprice,
+    price: parseInt(req.body.price),
+    prevprice: parseInt(req.body.prevprice),
     store: req.body.store,
-    freeShipping: req.body.freeShipping,
+    freeShipping: req.body.freeShipping === 'true' ? true : false,
     description: req.body.description,
     discountCode: req.body.discountCode,
     link: req.body.link,
@@ -84,25 +76,8 @@ const createDiscount = async (req, res) => {
     images: [],
   })
 
-  fs.mkdirSync(path.join(__dirname, `/../../uploads/${newDiscount._id}`), { recursive: false })
-  if (req.files.length > 1) throw createError(406, 'Przesłano zbyt dużo plików.')
-  else {
-    for (let i = 0; i < req.files.length; i++) {
-      const ext = path.extname(req.files[i].originalname)
-      if (ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg')
-        throw createError(406, 'Format przesłanego pliku jest niepoprawny.')
-      if (req.files[i].size > 5 * 1024 * 1024) throw createError(406, 'Rozmiar przesłanego pliku jest za duży.')
-
-      //const filename = Date.now() + '_' + req.files[i].originalName
-      const filename = `${req.files[i].fieldname}-${Date.now()}_${i}${ext}`
-
-      await pipeline(
-        Readable.from(req.files[i].buffer),
-        fs.createWriteStream(path.join(__dirname, `/../../uploads/${newDiscount._id}/${filename}`))
-      )
-      newDiscount.images.push(filename)
-    }
-  }
+  await createDirectory(`discounts/${newDiscount.id}`)
+  newDiscount.images = await saveFiles(uploads, `discounts/${newDiscount.id}`)
 
   await newDiscount.save()
 
@@ -110,14 +85,14 @@ const createDiscount = async (req, res) => {
 }
 //PUT - /discounts/updateDiscount/:id
 const updateDiscount = async (req, res) => {
-  const { authenticatedUser } = res.locals
+  const { authenticatedUser, modifiedFiles, uploads } = res.locals
 
   const validationResult = await updateDiscountValidation.validateAsync({
     title: req.body.title,
-    price: req.body.price,
-    prevprice: req.body.prevprice,
+    price: parseInt(req.body.price),
+    prevprice: parseInt(req.body.prevprice),
     store: req.body.store,
-    freeShipping: req.body.freeShipping,
+    freeShipping: req.body.freeShipping === 'true' ? true : false,
     description: req.body.description,
     discountCode: req.body.discountCode,
     link: req.body.link,
@@ -127,38 +102,7 @@ const updateDiscount = async (req, res) => {
   const updatedDiscount = await Discount.findById(req.params.id)
   if (!updatedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
 
-  if (updatedDiscount.addedBy == authenticatedUser.id || authenticatedUser.isAdmin) {
-    let images = [],
-      imagesToKeep = [],
-      imagesToUpload = []
-    if (Array.isArray(req.body.images)) images = req.body.images
-    else if (!Array.isArray(req.body.images) && req.body.images !== undefined) images.push(req.body.images)
-
-    if (images.length > 1) throw createError(422, 'Przesłano błędne dane.')
-    else if (req.files.length > 1 - images.length) throw createError(406, 'Przesłano zbyt dużo plików.')
-    else {
-      for (let i = 0; i < updatedDiscount.images.length; i++) {
-        if (images.includes(updatedDiscount.images[i])) imagesToKeep.push(updatedDiscount.images[i])
-        else fs.unlinkSync(path.join(__dirname, `/../../uploads/${updatedDiscount._id}/${updatedDiscount.images[i]}`))
-      }
-
-      for (let i = 0; i < req.files.length; i++) {
-        const ext = path.extname(req.files[i].originalname)
-        if (ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg')
-          throw createError(406, 'Format przesłanego pliku jest niepoprawny.')
-        if (req.files[i].size > 5 * 1024 * 1024) throw createError(406, 'Rozmiar przesłanego pliku jest za duży.')
-
-        //const filename = Date.now() + '_' + req.files[i].originalName
-        const filename = `${req.files[i].fieldname}-${Date.now()}_${i}${ext}`
-
-        await pipeline(
-          Readable.from(req.files[i].buffer),
-          fs.createWriteStream(path.join(__dirname, `/../../uploads/${updatedDiscount._id}/${filename}`))
-        )
-        imagesToUpload.push(filename)
-      }
-    }
-
+  if (updatedDiscount.addedBy.toString() === authenticatedUser.id || authenticatedUser.isAdmin) {
     updatedDiscount.title = validationResult.title
     updatedDiscount.price = validationResult.price
     updatedDiscount.prevprice = validationResult.prevprice
@@ -168,7 +112,8 @@ const updateDiscount = async (req, res) => {
     updatedDiscount.discountCode = validationResult.discountCode
     updatedDiscount.link = validationResult.link
     updatedDiscount.category = validationResult.category
-    updatedDiscount.images = imagesToKeep.concat(imagesToUpload)
+
+    updatedDiscount.images = await filterFiles(modifiedFiles, uploads, `discounts/${updatedDiscount.id}`)
 
     await updatedDiscount.save()
   } else throw createError(403, 'Brak wystarczających uprawnień.')
@@ -182,15 +127,13 @@ const deleteDiscount = async (req, res) => {
   const deletedDiscount = await Discount.findById(req.params.id).exec()
   if (!deletedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
 
-  if (deletedDiscount.addedBy == authenticatedUser.id || authenticatedUser.isAdmin) {
-    //fs.rmdirSync(`${__dirname}/../../uploads/${deletedDiscount._id}`, {recursive: true})
-    //fs.unlinkSync(`${__dirname}/../../uploads/${deletedDiscount._id}`)
-    await del(path.join(__dirname, `/../../uploads/${deletedDiscount._id}`))
+  if (deletedDiscount.addedBy.toString() === authenticatedUser.id || authenticatedUser.isAdmin) {
+    await removeDirectory(`discounts/${deletedDiscount.id}`)
 
     await deletedDiscount.remove()
-
-    return res.status(200).send({ message: 'Usunięto okazję.' })
   } else throw createError(403, 'Brak wystarczających uprawnień.')
+
+  return res.status(200).send({ message: 'Usunięto okazję.' })
 }
 
 //GET - /discounts/listDiscountRatings/:id

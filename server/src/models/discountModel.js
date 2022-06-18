@@ -24,7 +24,7 @@ const discountSchema = new mongoose.Schema(
     discountCode: { type: String },
     link: { type: String, required: true },
     category: { type: String },
-    images: { type: Array },
+    images: [{ type: String }],
     ratings: [ratingSchema],
     comments: [commentSchema],
   },

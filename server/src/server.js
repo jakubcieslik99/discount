@@ -19,7 +19,7 @@ app.set('trust proxy', `loopback, ${config.IP}`)
 databaseConnect(app)
 
 app.use(express.urlencoded({ extended: true }))
-app.use(express.json({ limit: '5mb' }))
+app.use(express.json({ limit: '1mb' }))
 app.use(cookieParser())
 app.use(helmet())
 app.use(cors(corsOptions))
@@ -27,7 +27,7 @@ app.use(rateLimit(rateLimiter))
 app.use(slowDown(speedLimiter))
 
 //static files
-app.use('/static/', express.static('uploads'))
+app.use('/static/discounts/', express.static('uploads/discounts'))
 //routes
 app.use('/users', userRoute)
 app.use('/adminUsers', adminUserRoute)

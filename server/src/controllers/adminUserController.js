@@ -1,6 +1,4 @@
 import createError from 'http-errors'
-import del from 'del'
-//import fs from 'fs'
 import User from '../models/userModel'
 import Discount from '../models/discountModel'
 
@@ -48,7 +46,7 @@ const adminDeleteUser = async (req, res) => {
   if (deletedUserDiscounts.length > 0) {
     for (let i = 0; i < deletedUserDiscounts.length; i++) {
       //fs.rmdirSync(`${__dirname}/../../uploads/${deletedUserDiscounts[i]._id}`, {recursive: true})
-      await del(path.join(__dirname, `/../../uploads/${deletedUserDiscounts[i]._id}`))
+      //await del(path.join(__dirname, `/../../uploads/${deletedUserDiscounts[i]._id}`))
 
       await Discount.findByIdAndRemove(deletedUserDiscounts[i]._id).exec()
     }
