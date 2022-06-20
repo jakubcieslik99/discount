@@ -19,7 +19,7 @@ const registerUserValidation = Joi.object({
     ),
   password: Joi.string().required().min(8).max(60),
   repassword: Joi.ref('password'),
-  rules: Joi.boolean().invalid(false),
+  rules: Joi.boolean().required().invalid(false),
 })
 
 const loginUserValidation = Joi.object({

@@ -15,7 +15,7 @@ const registerUserMessage = (to, nick, token) => {
       <h1>Witaj ${nick}!</h1>
       <h4>Dziękujemy za rejestrację w Discount.</h4>
       <p>Proszę kliknij poniższy link w celu potwierdzenia swojego konta w serwisie.</p>
-      <a href="${config.WEBAPP_URL}/signin?token=${token}">Potwierdź</a>
+      <a href="${config.WEBAPP_URL}/confirm?token=${token}">Potwierdź</a>
     `,
   }
 }
@@ -35,7 +35,7 @@ const resendUserAccountConfirmationMessage = (to, nick, token) => {
       <h1>Witaj ${nick}!</h1>
       <h4>Dziękujemy za rejestrację w Discount.</h4>
       <p>Proszę kliknij poniższy link w celu potwierdzenia swojego konta w serwisie.</p>
-      <a href="${config.WEBAPP_URL}/signin?token=${token}">Potwierdź</a>
+      <a href="${config.WEBAPP_URL}/confirm?token=${token}">Potwierdź</a>
     `,
   }
 }

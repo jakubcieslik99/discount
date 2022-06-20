@@ -29,7 +29,7 @@ const listDiscounts = async (req, res, next) => {
   else sortOrder = { createdAt: -1 }
 
   const count = await Discount.find(query).countDocuments().exec()
-  const listedDiscounts = await Discount.find(query)
+  const listedDiscounts = await Discount.find(query, '-ratings.ratedBy -comments')
     .populate('addedBy', 'nick')
     .sort(sortOrder)
     .limit(limit * 1)
@@ -40,7 +40,7 @@ const listDiscounts = async (req, res, next) => {
 }
 //GET - /discounts/listDiscountDetails/:id
 const listDiscountDetails = async (req, res) => {
-  const listedDiscount = await Discount.findById(req.params.id, '-ratings').populate('addedBy', 'nick').exec()
+  const listedDiscount = await Discount.findById(req.params.id, '-ratings -comments').populate('addedBy', 'nick').exec()
   if (!listedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
 
   return res.status(200).send({ discount: listedDiscount })
@@ -52,14 +52,14 @@ const createDiscount = async (req, res) => {
 
   const validationResult = await createDiscountValidation.validateAsync({
     title: req.body.title,
-    price: parseInt(req.body.price),
-    prevprice: parseInt(req.body.prevprice),
-    store: req.body.store,
-    freeShipping: req.body.freeShipping === 'true' ? true : false,
-    description: req.body.description,
-    discountCode: req.body.discountCode,
+    price: req.body.price,
+    prevprice: req.body.prevprice || 0,
+    store: req.body.store || '',
+    freeShipping: req.body.freeShipping || false,
+    description: req.body.description || '',
+    discountCode: req.body.discountCode || '',
     link: req.body.link,
-    category: req.body.category,
+    category: req.body.category || 'inne',
   })
 
   const newDiscount = new Discount({
@@ -89,17 +89,17 @@ const updateDiscount = async (req, res) => {
 
   const validationResult = await updateDiscountValidation.validateAsync({
     title: req.body.title,
-    price: parseInt(req.body.price),
-    prevprice: parseInt(req.body.prevprice),
-    store: req.body.store,
-    freeShipping: req.body.freeShipping === 'true' ? true : false,
-    description: req.body.description,
-    discountCode: req.body.discountCode,
+    price: req.body.price,
+    prevprice: req.body.prevprice || 0,
+    store: req.body.store || '',
+    freeShipping: req.body.freeShipping || false,
+    description: req.body.description || '',
+    discountCode: req.body.discountCode || '',
     link: req.body.link,
-    category: req.body.category,
+    category: req.body.category || 'inne',
   })
 
-  const updatedDiscount = await Discount.findById(req.params.id)
+  const updatedDiscount = await Discount.findById(req.params.id, '-ratings -comments')
   if (!updatedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
 
   if (updatedDiscount.addedBy.toString() === authenticatedUser.id || authenticatedUser.isAdmin) {
@@ -138,7 +138,7 @@ const deleteDiscount = async (req, res) => {
 
 //GET - /discounts/listDiscountRatings/:id
 const listDiscountRatings = async (req, res) => {
-  const listedDiscount = await Discount.findById(req.params.id, 'ratings').exec()
+  const listedDiscount = await Discount.findById(req.params.id, '-ratings.ratedBy').exec()
   if (!listedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
 
   return res.status(200).send({ ratings: listedDiscount.ratings })
@@ -147,19 +147,19 @@ const listDiscountRatings = async (req, res) => {
 const rateDiscount = async (req, res) => {
   const { authenticatedUser } = res.locals
 
-  if (req.body.rating !== true && req.body.rating !== false) throw createError(422, 'Przesłano błędne dane.')
+  if (req.body.rating !== 'true' && req.body.rating !== 'false') throw createError(422, 'Przesłano błędne dane.')
 
   const ratedDiscount = await Discount.findById(req.params.id, 'addedBy ratings').exec()
   if (!ratedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
 
-  if (ratedDiscount.addedBy == authenticatedUser.id) throw createError(409, 'Nie możesz ocenić swojej okazji.')
+  if (ratedDiscount.addedBy.toString() === authenticatedUser.id) throw createError(409, 'Nie możesz ocenić swojej okazji.')
 
-  const ratingIndex = ratedDiscount.ratings.findIndex(rating => rating.ratedBy == authenticatedUser.id)
-  if (ratingIndex >= 0) ratedDiscount.ratings[ratingIndex].rating = req.body.rating
+  const ratingIndex = ratedDiscount.ratings.findIndex(rating => rating.ratedBy.toString() === authenticatedUser.id)
+  if (ratingIndex >= 0) ratedDiscount.ratings[ratingIndex].rating = req.body.rating === 'true' ? true : false
   else {
     const newRating = {
       ratedBy: authenticatedUser.id,
-      rating: req.body.rating,
+      rating: req.body.rating === 'true' ? true : false,
     }
     ratedDiscount.ratings.push(newRating)
   }
@@ -175,12 +175,9 @@ const unrateDiscount = async (req, res) => {
   const unratedDiscount = await Discount.findById(req.params.id, 'ratings').exec()
   if (!unratedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
 
-  const unratingIndex = unratedDiscount.ratings.findIndex(rating => rating.ratedBy == authenticatedUser.id)
+  const unratingIndex = unratedDiscount.ratings.findIndex(rating => rating.ratedBy.toString() === authenticatedUser.id)
   if (unratingIndex < 0) throw createError(404, 'Podana ocena nie istnieje.')
 
-  //let newRatings = unratedDiscount.ratings
-  //newRatings.splice(unratingIndex, 1)
-  //unratedDiscount.ratings = newRatings
   unratedDiscount.ratings = unratedDiscount.ratings.splice(unratingIndex, 1)
 
   await unratedDiscount.save()
@@ -218,7 +215,7 @@ const commentDiscount = async (req, res) => {
 
   await commentedDiscount.save()
 
-  const newCommentedDiscount = await Discount.findById(commentedDiscount._id, 'comments')
+  const newCommentedDiscount = await Discount.findById(commentedDiscount.id, 'comments')
     .populate({
       path: 'comments',
       populate: { path: 'commentedBy', select: 'nick' },
@@ -234,10 +231,13 @@ const uncommentDiscount = async (req, res) => {
   const commentedDiscount = await Discount.findById(req.params.id, 'comments').exec()
   if (!commentedDiscount) throw createError(404, 'Podana okazja nie istnieje.')
 
-  const deletedCommentIndex = commentedDiscount.comments.findIndex(comment => comment._id == req.params.commentId)
+  const deletedCommentIndex = commentedDiscount.comments.findIndex(comment => comment.id === req.params.commentId)
   if (deletedCommentIndex < 0) throw createError(404, 'Podany komentarz nie istnieje.')
 
-  if (commentedDiscount.comments[deletedCommentIndex].commentedBy == authenticatedUser.id || authenticatedUser.isAdmin) {
+  if (
+    commentedDiscount.comments[deletedCommentIndex].commentedBy.toString() === authenticatedUser.id ||
+    authenticatedUser.isAdmin
+  ) {
     if (commentedDiscount.comments[deletedCommentIndex].deleted === true)
       throw createError(409, 'Podany komentarz został już usunięty.')
 
@@ -246,7 +246,7 @@ const uncommentDiscount = async (req, res) => {
 
     await commentedDiscount.save()
 
-    const newCommentedDiscount = await Discount.findById(commentedDiscount._id, 'comments')
+    const newCommentedDiscount = await Discount.findById(commentedDiscount.id, 'comments')
       .populate({
         path: 'comments',
         populate: { path: 'commentedBy', select: 'nick' },

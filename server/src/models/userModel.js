@@ -1,11 +1,11 @@
-import mongoose from 'mongoose'
+import { Schema, model } from 'mongoose'
 
-const userSchema = new mongoose.Schema(
+const userSchema = new Schema(
   {
-    email: { type: String, required: true, lowercase: true, unique: true, dropDups: true },
-    nick: { type: String, required: true, unique: true, dropDups: true },
+    email: { type: String, required: true },
+    nick: { type: String, required: true },
     password: { type: String, required: true },
-    token: { type: String },
+    token: { type: String /* | null*/ },
     confirmed: { type: Boolean, default: false },
     isAdmin: { type: Boolean, default: false },
   },
@@ -14,6 +14,6 @@ const userSchema = new mongoose.Schema(
   }
 )
 
-const userModel = mongoose.model('User', userSchema)
+const userModel = model('User', userSchema)
 
 export default userModel

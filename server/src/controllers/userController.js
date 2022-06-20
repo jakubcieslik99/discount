@@ -1,6 +1,7 @@
 import createError from 'http-errors'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
+import { removeDirectory } from '../functions/manageUploads'
 import User from '../models/userModel'
 import Discount from '../models/discountModel'
 import { config } from '../config/utilities'
@@ -20,9 +21,11 @@ import { sendUserPasswordResetMessage } from '../messages/passwordMessages'
 
 //POST - /users/registerUser
 const registerUser = async (req, res) => {
+  if (req.cookies?.token) throw createError(409, 'Inny użytkownik jest zalogowany.')
+
   const validationResult = await registerUserValidation.validateAsync(req.body)
 
-  const conflictUserEmail = await User.findOne({ email: validationResult.email }).exec()
+  const conflictUserEmail = await User.findOne({ email: validationResult.email.toLowerCase() }).exec()
   if (conflictUserEmail) throw createError(409, 'Istnieje już użytkownik o podanym adresie email.')
   const conflictUserNick = await User.findOne({ nick: validationResult.nick }).exec()
   if (conflictUserNick) throw createError(409, 'Istnieje już użytkownik o podanym nicku.')
@@ -32,14 +35,14 @@ const registerUser = async (req, res) => {
   const token = crypto.randomBytes(64).toString('hex')
 
   const createUser = new User({
-    email: validationResult.email,
+    email: validationResult.email.toLowerCase(),
     nick: validationResult.nick,
     password: hashedPassword,
     token,
   })
   await createUser.save()
 
-  await sendEmail(registerUserMessage(validationResult.email, validationResult.nick, token))
+  await sendEmail(registerUserMessage(validationResult.email.toLowerCase(), validationResult.nick, token))
 
   return res.status(201).send({
     message:
@@ -52,7 +55,7 @@ const loginUser = async (req, res) => {
 
   const validationResult = await loginUserValidation.validateAsync(req.body)
 
-  const loggedUser = await User.findOne({ email: validationResult.email }).exec()
+  const loggedUser = await User.findOne({ email: validationResult.email.toLowerCase() }).exec()
   if (!loggedUser) throw createError(404, 'Konto użytkownika nie istnieje lub zostało usunięte.')
 
   if (!loggedUser.confirmed) throw createError(401, 'Email nie został potwierdzony.')
@@ -60,7 +63,8 @@ const loginUser = async (req, res) => {
   const checkPassword = await bcrypt.compare(validationResult.password, loggedUser.password)
   if (!checkPassword) throw createError(401, 'Błędny email lub hasło.')
 
-  const token = await getToken(loggedUser._id, loggedUser.email, loggedUser.nick, loggedUser.isAdmin)
+  const token = await getToken(loggedUser.id, loggedUser.email, loggedUser.nick, loggedUser.isAdmin)
+  if (!token) throw createError(500, 'Błąd serwera.')
 
   res
     .cookie('token', token, {
@@ -73,7 +77,7 @@ const loginUser = async (req, res) => {
     .send({
       message: 'Zalogowano pomyślnie. Nastąpi przekierowanie do profilu.',
       userInfo: {
-        id: loggedUser._id,
+        id: loggedUser.id,
         email: loggedUser.email,
         nick: loggedUser.nick,
         isAdmin: loggedUser.isAdmin,
@@ -88,16 +92,18 @@ const updateUser = async (req, res) => {
   if (authenticatedUser.id !== req.body.id) throw createError(422, 'Przesłano błędne dane.')
 
   const validationResult = await updateUserValidation.validateAsync({
-    email: req.body.email,
+    email: req.body.email.toLowerCase(),
     nick: req.body.nick,
     password: req.body.password,
-    newpassword: req.body.newpassword,
+    newpassword: req.body.newpassword || '',
   })
 
   const conflictUserEmail = await User.findOne({ email: validationResult.email }).exec()
-  if (conflictUserEmail?._id != req.body.id) throw createError(409, 'Istnieje już użytkownik o podanym adresie email.')
+  if (conflictUserEmail && conflictUserEmail.id !== req.body.id)
+    throw createError(409, 'Istnieje już użytkownik o podanym adresie email.')
   const conflictUserNick = await User.findOne({ nick: validationResult.nick }).exec()
-  if (conflictUserNick?._id != req.body.id) throw createError(409, 'Istnieje już użytkownik o podanym nicku.')
+  if (conflictUserNick && conflictUserNick.id !== req.body.id)
+    throw createError(409, 'Istnieje już użytkownik o podanym nicku.')
 
   const updateUser = await User.findById(req.body.id).exec()
   if (!updateUser) throw createError(404, 'Podany użytkownik nie istnieje.')
@@ -114,12 +120,13 @@ const updateUser = async (req, res) => {
   }
   const updatedUser = await updateUser.save()
 
-  const token = await getToken(updatedUser._id, updatedUser.email, updatedUser.nick, updatedUser.isAdmin)
+  const token = await getToken(updatedUser.id, updatedUser.email, updatedUser.nick, updatedUser.isAdmin)
+  if (!token) throw createError(500, 'Błąd serwera.')
 
   return res.status(200).send({
     message: 'Zaktualizowano profil.',
     userInfo: {
-      id: updatedUser._id,
+      id: updatedUser.id,
       email: updatedUser.email,
       nick: updatedUser.nick,
       isAdmin: updatedUser.isAdmin,
@@ -134,9 +141,9 @@ const deleteUser = async (req, res) => {
 
   const deletedUserRatedDiscounts = await Discount.find({ 'ratings.ratedBy': req.body.id }, '_id').exec()
   if (deletedUserRatedDiscounts.length > 0) {
-    for (let i = 0; i < deletedUserRatedDiscounts.length; i++) {
-      const unratedDiscount = await Discount.findById(deletedUserRatedDiscounts[i]._id).exec()
-      const unratingIndex = unratedDiscount.ratings.findIndex(rating => rating.ratedBy == req.body.id)
+    for (let deletedUserRatedDiscount of deletedUserRatedDiscounts) {
+      const unratedDiscount = await Discount.findById(deletedUserRatedDiscount.id).exec()
+      const unratingIndex = unratedDiscount.ratings.findIndex(rating => rating.ratedBy.toString() === req.body.id)
       if (unratingIndex >= 0) {
         let newRatings = unratedDiscount.ratings
         newRatings.splice(unratingIndex, 1)
@@ -149,20 +156,19 @@ const deleteUser = async (req, res) => {
 
   const deletedUserDiscounts = await Discount.find({ addedBy: req.body.id }, '_id').exec()
   if (deletedUserDiscounts.length > 0) {
-    for (let i = 0; i < deletedUserDiscounts.length; i++) {
-      //fs.rmdirSync(`${__dirname}/../../uploads/${deletedUserDiscounts[i]._id}`, {recursive: true})
-      //fs.unlinkSync(`${__dirname}/../../uploads/${deletedUserDiscounts[i]._id}`)
-      //await del(path.join(__dirname, `/../../uploads/${deletedUserDiscounts[i]._id}`))
-
-      await Discount.findByIdAndRemove(deletedUserDiscounts[i]._id).exec()
+    for (let deletedUserDiscount of deletedUserDiscounts) {
+      await removeDirectory(`discounts/${deletedUserDiscount.id}`)
+      await Discount.findByIdAndRemove(deletedUserDiscount.id).exec()
     }
   }
 
-  //const deletedUser = await User.findById(req.body.id).exec()
-  //await deletedUser.remove()
   await authenticatedUser.remove()
 
-  return res.status(200).send({ message: 'Usunięto konto z serwisu.' })
+  if (!req.cookies?.token) return res.status(200).send({ message: 'Usunięto konto z serwisu.' })
+  return res
+    .clearCookie('token', { httpOnly: true, sameSite: 'none', secure: config.ENV !== 'test' ? true : false })
+    .status(200)
+    .send({ message: 'Usunięto konto z serwisu.' })
 }
 
 //GET - /users/logoutUser
@@ -178,7 +184,7 @@ const logoutUser = async (req, res) => {
 const resendUserAccountConfirmation = async (req, res) => {
   const validationResult = await resendUserAccountConfirmationValidation.validateAsync(req.body)
 
-  const reconfirmedUser = await User.findOne({ email: validationResult.email }).exec()
+  const reconfirmedUser = await User.findOne({ email: validationResult.email.toLowerCase() }).exec()
   if (!reconfirmedUser) throw createError(404, 'Konto użytkownika nie istnieje.')
 
   const checkPassword = await bcrypt.compare(validationResult.password, reconfirmedUser.password)
@@ -189,7 +195,9 @@ const resendUserAccountConfirmation = async (req, res) => {
   reconfirmedUser.token = crypto.randomBytes(64).toString('hex')
   await reconfirmedUser.save()
 
-  await sendEmail(resendUserAccountConfirmationMessage(validationResult.email, reconfirmedUser.nick, reconfirmedUser.token))
+  await sendEmail(
+    resendUserAccountConfirmationMessage(validationResult.email.toLowerCase(), reconfirmedUser.nick, reconfirmedUser.token)
+  )
 
   return res.status(200).send({
     message:
@@ -213,7 +221,7 @@ const confirmUserAccount = async (req, res) => {
 const sendUserPasswordReset = async (req, res) => {
   const validationResult = await sendUserPasswordResetValidation.validateAsync(req.body)
 
-  const passwordResetRequestedUser = await User.findOne({ email: validationResult.email }).exec()
+  const passwordResetRequestedUser = await User.findOne({ email: validationResult.email.toLowerCase() }).exec()
   if (!passwordResetRequestedUser) throw createError(404, 'Konto użytkownika nie istnieje.')
 
   if (!passwordResetRequestedUser.confirmed) throw createError(409, 'Email nie został jeszcze potwierdzony.')
@@ -222,7 +230,11 @@ const sendUserPasswordReset = async (req, res) => {
   await passwordResetRequestedUser.save()
 
   await sendEmail(
-    sendUserPasswordResetMessage(validationResult.email, passwordResetRequestedUser.nick, passwordResetRequestedUser.token)
+    sendUserPasswordResetMessage(
+      validationResult.email.toLowerCase(),
+      passwordResetRequestedUser.nick,
+      passwordResetRequestedUser.token
+    )
   )
 
   return res.status(200).send({ message: 'Wysłano wiadomość z linkiem do resetowania hasła.' })

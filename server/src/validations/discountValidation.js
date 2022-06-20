@@ -14,18 +14,20 @@ const createDiscountValidation = Joi.object({
     .pattern(
       new RegExp(/^((https?:\/\/)?)[a-zA-Z0-9]{1}[a-zA-Z0-9-.]{0,}\.[a-z]{2,13}[a-zA-Z0-9:/?#[\]@!$%&'()*+,;=\-.]{0,}$/)
     ),
-  category: Joi.string().valid(
-    'artykuly_spozywcze',
-    'dom_i_ogrod',
-    'elektronika',
-    'moda',
-    'podroze',
-    'rozrywka',
-    'sport',
-    'subskrypcje_i_uslugi',
-    'zdrowie_i_uroda',
-    'inne'
-  ),
+  category: Joi.string()
+    .required()
+    .valid(
+      'artykuly_spozywcze',
+      'dom_i_ogrod',
+      'elektronika',
+      'moda',
+      'podroze',
+      'rozrywka',
+      'sport',
+      'subskrypcje_i_uslugi',
+      'zdrowie_i_uroda',
+      'inne'
+    ),
 })
 
 const updateDiscountValidation = Joi.object({

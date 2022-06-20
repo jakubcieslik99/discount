@@ -25,7 +25,10 @@ const isProperAmountUpdated = (minAmount, maxAmount, fieldname) => (req, res, ne
     req.body[fieldname].forEach(file => {
       if ((typeof file === 'string' || file instanceof String) && file !== '') modifiedFiles.push(file)
     })
-  } else if ((typeof req.body[fieldname] === 'string' || file instanceof String) && req.body[fieldname] !== '') {
+  } else if (
+    (typeof req.body[fieldname] === 'string' || req.body[fieldname] instanceof String) &&
+    req.body[fieldname] !== ''
+  ) {
     modifiedFiles.push(req.body[fieldname])
   }
 

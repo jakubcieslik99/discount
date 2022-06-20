@@ -1,20 +1,20 @@
-import mongoose from 'mongoose'
+import { Schema, model } from 'mongoose'
 
-const ratingSchema = new mongoose.Schema({
-  ratedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+const ratingSchema = new Schema({
+  ratedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   rating: { type: Boolean, required: true },
 })
 
-const commentSchema = new mongoose.Schema({
-  commentedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+const commentSchema = new Schema({
+  commentedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   message: { type: String, required: true },
   deleted: { type: Boolean, default: false },
   createdAt: { type: Date, required: true },
 })
 
-const discountSchema = new mongoose.Schema(
+const discountSchema = new Schema(
   {
-    addedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    addedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     title: { type: String, required: true },
     price: { type: Number, required: true },
     prevprice: { type: Number },
@@ -33,6 +33,6 @@ const discountSchema = new mongoose.Schema(
   }
 )
 
-const discountModel = mongoose.model('Discount', discountSchema)
+const discountModel = model('Discount', discountSchema)
 
 export default discountModel

@@ -1,4 +1,5 @@
 import createError from 'http-errors'
+import { removeDirectory } from '../functions/manageUploads'
 import User from '../models/userModel'
 import Discount from '../models/discountModel'
 
@@ -29,9 +30,9 @@ const adminDeleteUser = async (req, res) => {
 
   const deletedUserRatedDiscounts = await Discount.find({ 'ratings.ratedBy': req.params.id }, '_id').exec()
   if (deletedUserRatedDiscounts.length > 0) {
-    for (let i = 0; i < deletedUserRatedDiscounts.length; i++) {
-      const unratedDiscount = await Discount.findById(deletedUserRatedDiscounts[i]._id).exec()
-      const unratingIndex = unratedDiscount.ratings.findIndex(rating => rating.ratedBy == req.params.id)
+    for (let deletedUserRatedDiscount in deletedUserRatedDiscounts) {
+      const unratedDiscount = await Discount.findById(deletedUserRatedDiscount.id).exec()
+      const unratingIndex = unratedDiscount.ratings.findIndex(rating => rating.ratedBy.toString() === req.params.id)
       if (unratingIndex >= 0) {
         let newRatings = unratedDiscount.ratings
         newRatings.splice(unratingIndex, 1)
@@ -44,11 +45,9 @@ const adminDeleteUser = async (req, res) => {
 
   const deletedUserDiscounts = await Discount.find({ addedBy: req.params.id }, '_id').exec()
   if (deletedUserDiscounts.length > 0) {
-    for (let i = 0; i < deletedUserDiscounts.length; i++) {
-      //fs.rmdirSync(`${__dirname}/../../uploads/${deletedUserDiscounts[i]._id}`, {recursive: true})
-      //await del(path.join(__dirname, `/../../uploads/${deletedUserDiscounts[i]._id}`))
-
-      await Discount.findByIdAndRemove(deletedUserDiscounts[i]._id).exec()
+    for (let deletedUserDiscount in deletedUserDiscounts) {
+      await removeDirectory(`discounts/${deletedUserDiscount.id}`)
+      await Discount.findByIdAndRemove(deletedUserDiscount.id).exec()
     }
   }
 
